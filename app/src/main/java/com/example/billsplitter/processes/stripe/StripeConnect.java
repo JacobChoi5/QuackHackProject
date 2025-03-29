@@ -1,4 +1,4 @@
-package com.example.billsplitter;
+package com.example.billsplitter.processes.stripe;
 
 import android.content.Intent;
 import android.net.Uri;
@@ -7,9 +7,14 @@ import android.util.Log;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.stripe.Stripe;
-import com.stripe.model.OAuthToken;
-import com.stripe.param.OauthTokenCreateParams;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.FormBody;
+
+import org.json.JSONObject;
+
 
 public class StripeConnect extends AppCompatActivity{
     private static final String TAG = "StripeConnect";
@@ -54,21 +59,38 @@ public class StripeConnect extends AppCompatActivity{
     private void handleOAuthCallback(String authorizationCode) {
         new Thread(() -> {
             try {
-                Stripe.apiKey = STRIPE_API_KEY;
+                OkHttpClient client = new OkHttpClient();
 
-                //Authorization code -> Access token
-                OAuthTokenCreateParams params = OAuthTokenCreateParams.builder().setCode(authorizationCode).build();
-                OAuthToken token = OAuthToken.create(params);
+                RequestBody requestBody = new FormBody.Builder()
+                        .add("client_secret", STRIPE_API_KEY)
+                        .add("code", authorizationCode)
+                        .add("grant_type", "authorization_code")
+                        .build();
 
-                //Connect to account form access token
-                String connectedAccountID = token.getStripeUserID();
-                String accessToken = token.getAccessToken();
+                Request request = new Request.Builder()
+                        .url("https://connect.stripe.com/oauth/token")
+                        .post(requestBody)
+                        .build();
 
-                Log.i(TAG, "Connected account ID: " + connectedAccountId);
-                Log.i(TAG, "Access token: " + accessToken);
-            } catch(Exception e) {
-                Log.e(TAG, "OAuth token exchange failed.", e); //error handling
+                Response response = client.newCall(request).execute();
+
+                if (response.isSuccessful()) {
+                    String responseBody = response.body().string();
+                    JSONObject json = new JSONObject(responseBody);
+
+                    String connectedAccountId = json.getString("stripe_user_id");
+                    String accessToken = json.getString("access_token");
+
+                    Log.i(TAG, "Connected account ID: " + connectedAccountId);
+                    Log.i(TAG, "Access token: " + accessToken);
+                } else {
+                    Log.e(TAG, "Stripe OAuth failed: HTTP " + response.code());
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "OAuth token exchange failed.", e);
             }
         }).start();
     }
+
 }
